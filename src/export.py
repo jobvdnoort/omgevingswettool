@@ -51,11 +51,28 @@ def export_results(
     if geometries:
         relations = [{k: r.get(k) for k in ("document_id", "object_identificatie", "locatie_identificatie", "geometrie_identificatie", "object_type")} for r in geometries]
         _safe_frame(relations).to_sql("object_document_relaties", __import__("sqlite3").connect(geom_gpkg), if_exists="replace", index=False)
-    (output_dir / "metadata.json").write_text(json.dumps({"aantal_documenten": len(documents), "aantal_geometrieën": len(geometries), "waarschuwingen": warnings}, ensure_ascii=False, indent=2), encoding="utf-8")
+    (output_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "aantal_documenten": len(documents),
+                "aantal_geometrieën": len(geometries),
+                "waarschuwingen": warnings,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     with (output_dir / "export_log.csv").open("w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh)
-        writer.writerow(["bestand", "status"])
-        writer.writerows([("01_documenten.gpkg", "aangemaakt"), ("02_inhoudelijke_geometrie.gpkg", "aangemaakt")])
+        writer.writerow(["bestand", "status", "toelichting"])
+        writer.writerows(
+            [
+                ("01_documenten.gpkg", "aangemaakt", f"{len(documents)} documenten"),
+                ("02_inhoudelijke_geometrie.gpkg", "aangemaakt", f"{len(geometries)} geometrieën"),
+                ("metadata.json", "aangemaakt", f"{len(warnings)} waarschuwingen"),
+            ]
+        )
     zip_path = output_dir / "omgevingswettool_resultaat.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
         for path in output_dir.rglob("*"):

@@ -5,3 +5,5 @@ __pycache__/
 *.pyc
 output/*
 !output/.gitkeep
+debug_output/
+debug_output/**

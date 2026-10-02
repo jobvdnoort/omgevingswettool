@@ -12,7 +12,7 @@ class ApiConfig:
     geometrie: str = "https://service.omgevingswet.overheid.nl/publiek/omgevingsdocumenten/api/geometrieopvragen/v1"
     timeout: float = 30.0
     retries: int = 3
-    page_size: int = 200
+    page_size: int = 20  # OpenAPI default; maximum 200
 
 
 def get_api_key() -> str | None:
