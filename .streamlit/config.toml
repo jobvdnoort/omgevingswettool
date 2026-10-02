@@ -1,0 +1,7 @@
+[server]
+maxUploadSize = 50
+headless = true
+
+[theme]
+primaryColor = "#176b87"
+base = "light"
