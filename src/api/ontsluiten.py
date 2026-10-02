@@ -6,6 +6,8 @@ from src.api.base_client import BaseClient
 from src.config import ApiConfig
 from src.models import DocumentRecord
 
+RD_CRS_URI = "http://www.opengis.net/def/crs/EPSG/0/28992"
+
 
 def _value(item: dict[str, Any], *keys: str) -> Any:
     for key in keys:
@@ -55,7 +57,7 @@ class OntsluitenClient(BaseClient):
             body["regelgevingOfOverig"] = "REGELGEVING"
         records: list[DocumentRecord] = []
         while len(records) < max_documents:
-            payload = self.json("POST", "/documenten/_zoek", params=params, json=body, headers={"Content-Crs": "EPSG:28992"})
+            payload = self.json("POST", "/documenten/_zoek", params=params, json=body, headers={"Content-Crs": RD_CRS_URI})
             if raw_dir:
                 raw_dir.mkdir(parents=True, exist_ok=True)
                 (raw_dir / f"pagina_{params['page']}.json").write_text(__import__("json").dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
