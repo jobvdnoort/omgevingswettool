@@ -9,6 +9,7 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 import streamlit as st
+import fiona
 from shapely.geometry import shape
 
 from src.api.base_client import DSOApiError
@@ -36,8 +37,9 @@ if uploaded:
         search, valid = prepare_search_geometry(frame)
         st.success(f"{uploaded.name} gelezen: {len(valid)} object(en), CRS {frame.crs}, {search.area / 10_000:.2f} ha.")
         st.write({"bounding_box_rd": [round(v, 3) for v in search.bounds], "gedetecteerd_crs": str(frame.crs)})
-        st.map(gpd.GeoDataFrame(geometry=[search], crs=RD_CRS).to_crs(4326))
-    except (ValueError, OSError, fiona.errors.FionaError if "fiona" in globals() else OSError) as exc:
+        centroid = gpd.GeoDataFrame(geometry=[search], crs=RD_CRS).to_crs(4326).geometry.iloc[0].centroid
+        st.map(pd.DataFrame({"lat": [centroid.y], "lon": [centroid.x]}), zoom=10)
+    except (ValueError, OSError, fiona.errors.FionaError) as exc:
         st.error(str(exc))
 
 st.subheader("2. Zoekinstellingen")

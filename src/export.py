@@ -18,7 +18,15 @@ LOG = logging.getLogger(__name__)
 
 
 def _safe_frame(records: list[dict[str, Any]]) -> pd.DataFrame:
-    return pd.DataFrame([{k: v for k, v in r.items() if k != "geometry"} for r in records])
+    rows = []
+    for record in records:
+        row = {}
+        for key, value in record.items():
+            if key == "geometry":
+                continue
+            row[key] = json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else value
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 
 def export_results(
