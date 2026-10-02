@@ -8,11 +8,12 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from src.api.base_client import BaseClient, DSOApiError
+from src.api.base_client import BaseClient, DSOApiError, redact_request_headers
 from src.config import ApiConfig
 from src.models import DocumentRecord
 
 RD_CRS_URI = "http://www.opengis.net/def/crs/EPSG/0/28992"
+ACCEPT_HAL_JSON = "application/hal+json"
 DOCUMENT_SEARCH_PATH = "/documenten/_zoek"
 
 # OpenAPI: page minimum=0, example=0 (0-based). size maximum=200.
@@ -43,6 +44,7 @@ class DocumentSearchDebug:
     warnings: list[str] = field(default_factory=list)
     polygon_result_count: int | None = None
     point_result_count: int | None = None
+    request_headers: dict[str, str] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -50,6 +52,7 @@ class DocumentSearchDebug:
             "method": self.method,
             "query_params": self.query_params,
             "request_body": self.request_body,
+            "request_headers": self.request_headers,
             "http_status": self.http_status,
             "response_headers": self.response_headers,
             "geometry_type": self.geometry_type,
@@ -223,8 +226,18 @@ def _has_next_page(payload: dict[str, Any], current_page: int) -> bool:
 
 class OntsluitenClient(BaseClient):
     def __init__(self, base_url: str, api_key: str, config: ApiConfig | None = None):
-        super().__init__(base_url, api_key, config)
+        # Ontsluiten v2 verwacht HAL; niet application/json (dat geeft HTTP 406).
+        super().__init__(base_url, api_key, config, accept=ACCEPT_HAL_JSON)
         self.last_debug = DocumentSearchDebug()
+
+    @staticmethod
+    def document_search_headers() -> dict[str, str]:
+        """Vereiste headers voor POST /documenten/_zoek (zonder API-key)."""
+        return {
+            "Content-Type": "application/json",
+            "Accept": ACCEPT_HAL_JSON,
+            "Content-Crs": RD_CRS_URI,
+        }
 
     def _build_params(
         self,
@@ -263,20 +276,24 @@ class OntsluitenClient(BaseClient):
         page_label: str,
     ) -> tuple[Any, DocumentSearchDebug]:
         endpoint = f"{self.base_url}{DOCUMENT_SEARCH_PATH}"
-        headers = {"Content-Crs": RD_CRS_URI}
+        # Content-Type = JSON body; Accept = HAL response. Requestheaders winnen van sessie.
+        headers = self.document_search_headers()
+        effective_headers = self.merge_headers(headers)
+        safe_headers = redact_request_headers(effective_headers)
         started = time.perf_counter()
         debug = DocumentSearchDebug(
             endpoint=endpoint,
             method="POST",
             query_params=dict(params),
             request_body=body,
+            request_headers=safe_headers,
             geometry_type=str(body.get("geometrie", {}).get("type")),
         )
         request_dump = {
             "endpoint": endpoint,
             "method": "POST",
             "query_params": params,
-            "headers": {"Content-Type": "application/json", "Content-Crs": RD_CRS_URI},
+            "headers": safe_headers,
             "body": body,
         }
         _write_raw(raw_dir, f"request_{page_label}.json", request_dump)
@@ -423,6 +440,7 @@ class OntsluitenClient(BaseClient):
             if human_page == 1:
                 aggregate.http_status = page_debug.http_status
                 aggregate.response_headers = page_debug.response_headers
+                aggregate.request_headers = page_debug.request_headers
                 aggregate.response_body = payload
                 aggregate.duration_ms = page_debug.duration_ms
                 aggregate.documents_array_path = array_path

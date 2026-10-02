@@ -8,8 +8,9 @@ import pytest
 import responses
 from shapely.geometry import MultiPolygon, Polygon
 
-from src.api.base_client import DSOApiError
+from src.api.base_client import BaseClient, DSOApiError, redact_request_headers
 from src.api.ontsluiten import (
+    ACCEPT_HAL_JSON,
     RD_CRS_URI,
     OntsluitenClient,
     find_documents_array,
@@ -70,10 +71,15 @@ def test_http_200_with_documents_in_embedded(client, tmp_path):
     assert (tmp_path / "request_page_1.json").exists()
     assert (tmp_path / "response_page_1.json").exists()
     request_body = json.loads((tmp_path / "request_page_1.json").read_text())
-    assert "x-api-key" not in json.dumps(request_body)
+    dumped = json.dumps(request_body)
+    assert "test-key" not in dumped
+    assert request_body["headers"].get("x-api-key") == "[INGESTELD]"
     assert request_body["query_params"]["page"] == 0
     assert request_body["headers"]["Content-Crs"] == RD_CRS_URI
+    assert request_body["headers"]["Accept"] == ACCEPT_HAL_JSON
+    assert request_body["headers"]["Content-Type"] == "application/json"
     assert not request_body["headers"]["Content-Crs"].endswith(",")
+    assert result.debug.request_headers.get("x-api-key") == "[INGESTELD]"
 
 
 @responses.activate
@@ -236,6 +242,55 @@ def test_minimal_request_omits_optional_filters(client):
     assert responses.calls[0].request.headers["Content-Crs"] == RD_CRS_URI
     body = json.loads(responses.calls[0].request.body)
     assert set(body.keys()) == {"geometrie"}
+
+
+@responses.activate
+def test_document_search_sends_hal_accept_and_json_content_type(client):
+    responses.add(responses.POST, ZOEK, json=_page_payload([SAMPLE_DOC]), status=200)
+    client.search_documents({"type": "Point", "coordinates": [155000.0, 463000.0]})
+    assert len(responses.calls) == 1
+    headers = responses.calls[0].request.headers
+    assert headers["Accept"] == "application/hal+json"
+    assert headers["Content-Type"] == "application/json"
+    assert headers["Content-Crs"] == "http://www.opengis.net/def/crs/EPSG/0/28992"
+    assert headers["Accept"] == ACCEPT_HAL_JSON
+    assert headers["Content-Crs"] == RD_CRS_URI
+
+
+@responses.activate
+def test_base_client_does_not_override_hal_accept_with_application_json():
+    """Regressie: globale/sessie-Accept mag HAL niet terugzetten naar application/json."""
+    client = OntsluitenClient(BASE, "test-key")
+    # Simuleer een verkeerde globale default die eerder 406 veroorzaakte.
+    client.session.headers["Accept"] = "application/json"
+    responses.add(responses.POST, ZOEK, json=_page_payload([SAMPLE_DOC]), status=200)
+    client.search_documents({"type": "Point", "coordinates": [155000.0, 463000.0]})
+    assert responses.calls[0].request.headers["Accept"] == "application/hal+json"
+    assert responses.calls[0].request.headers["Content-Type"] == "application/json"
+    assert client.accept == ACCEPT_HAL_JSON
+
+
+def test_redact_request_headers_hides_api_key():
+    redacted = redact_request_headers(
+        {
+            "Accept": ACCEPT_HAL_JSON,
+            "Content-Type": "application/json",
+            "Content-Crs": RD_CRS_URI,
+            "x-api-key": "super-geheim",
+        }
+    )
+    assert redacted["x-api-key"] == "[INGESTELD]"
+    assert redacted["Accept"] == ACCEPT_HAL_JSON
+    assert "super-geheim" not in redacted.values()
+
+
+def test_ontsluiten_client_default_accept_is_hal():
+    client = OntsluitenClient(BASE, "test-key")
+    assert client.accept == ACCEPT_HAL_JSON
+    assert client.session.headers["Accept"] == ACCEPT_HAL_JSON
+    # Andere clients behouden JSON-accept tenzij anders geconfigureerd.
+    other = BaseClient(BASE, "test-key")
+    assert other.accept == "application/json"
 
 
 @responses.activate

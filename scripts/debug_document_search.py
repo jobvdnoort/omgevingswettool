@@ -55,7 +55,7 @@ def _safe_headers() -> dict[str, str]:
     return {
         "x-api-key": key,
         "Content-Type": "application/json",
-        "Accept": "application/json",
+        "Accept": "application/hal+json",
         "Content-Crs": CRS_URI,
     }
 
@@ -72,8 +72,9 @@ def _do_request(body: dict, out_dir: Path, label: str) -> None:
         "query_params": params,
         "headers": {
             "Content-Type": "application/json",
+            "Accept": "application/hal+json",
             "Content-Crs": CRS_URI,
-            # API-key bewust weggelaten
+            "x-api-key": "[INGESTELD]",
         },
         "body": body,
     }
