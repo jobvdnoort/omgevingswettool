@@ -78,6 +78,11 @@ if st.button("3. Documenten ophalen en 4. Geometrieën verwerken", type="primary
                         continue
                     try:
                         payload = presenter.get_document_structure(str(doc.uri_identificatie), valid_on.isoformat())
+                        object_raw = raw / "objecten"
+                        object_raw.mkdir(parents=True, exist_ok=True)
+                        (object_raw / f"{doc.document_id}.json").write_text(
+                            json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+                        )
                         ids = presenter.find_geometry_identifiers(payload)
                         for gid in ids:
                             if gid in seen:
