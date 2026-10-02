@@ -43,15 +43,65 @@ def prepare_search_geometry(frame: gpd.GeoDataFrame) -> tuple[BaseGeometry, gpd.
     return merged, frame
 
 
+def _to_python_number(value: Any, decimals: int) -> float:
+    """Zet coördinaten om naar plain float; weiger NaN/Infinity/numpy-restanten."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Ongeldige coördinaatwaarde: {value!r}") from exc
+    if number != number or number in (float("inf"), float("-inf")):
+        raise ValueError("Geometrie bevat NaN of Infinity en kan niet naar JSON.")
+    return round(number, decimals)
+
+
+def _round_coords(value: Any, decimals: int = 3) -> Any:
+    if isinstance(value, (list, tuple)):
+        return [_round_coords(v, decimals) for v in value]
+    return _to_python_number(value, decimals)
+
+
+def _close_ring(ring: list[Any]) -> list[Any]:
+    if not ring:
+        return ring
+    if ring[0] != ring[-1]:
+        return list(ring) + [ring[0]]
+    return list(ring)
+
+
+def _ensure_closed_coordinates(geom_type: str, coordinates: Any) -> Any:
+    """Houd Polygon-/MultiPolygon-nesting intact en sluit ringen."""
+    if geom_type == "Polygon":
+        return [_close_ring(list(ring)) for ring in coordinates]
+    if geom_type == "MultiPolygon":
+        return [[_close_ring(list(ring)) for ring in polygon] for polygon in coordinates]
+    return coordinates
+
+
 def rounded_geojson(geom: BaseGeometry, decimals: int = 3) -> dict[str, Any]:
     """GeoJSON met RD-coördinaten afgerond op maximaal drie decimalen."""
-    def round_coords(value: Any) -> Any:
-        if isinstance(value, (list, tuple)):
-            return [round_coords(v) for v in value]
-        return round(value, decimals) if isinstance(value, (float, int)) else value
+    if geom.geom_type == "GeometryCollection":
+        polygons = [g for g in geom.geoms if g.geom_type in {"Polygon", "MultiPolygon"}]
+        if not polygons:
+            raise ValueError("GeometryCollection bevat geen Polygon/MultiPolygon.")
+        geom = unary_union(polygons)
     result = mapping(geom)
-    result["coordinates"] = round_coords(result["coordinates"])
-    return result
+    geom_type = result.get("type")
+    if geom_type not in {"Point", "Polygon", "MultiPolygon", "LineString", "MultiLineString", "MultiPoint"}:
+        raise ValueError(f"Niet-ondersteund geometrietype voor DSO: {geom_type}")
+    coordinates = _round_coords(result["coordinates"], decimals)
+    result["coordinates"] = _ensure_closed_coordinates(str(geom_type), coordinates)
+    # Alleen type + coordinates; voorkom extra nesting of crs-velden.
+    return {"type": result["type"], "coordinates": result["coordinates"]}
+
+
+def representative_point_geojson(geom: BaseGeometry, decimals: int = 3) -> dict[str, Any]:
+    """Representatief punt in RD als GeoJSON Point."""
+    point = geom.representative_point()
+    return rounded_geojson(point, decimals)
+
+
+def bounding_box_rd(geom: BaseGeometry, decimals: int = 3) -> list[float]:
+    return [round(float(v), decimals) for v in geom.bounds]
 
 
 def geometry_flags(geom: BaseGeometry, search: BaseGeometry) -> dict[str, Any]:
